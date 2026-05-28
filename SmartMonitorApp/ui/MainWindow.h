@@ -31,6 +31,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QTimer>
+#include <QThread>
 #include "../network/TcpClient.h"
 #include "../thread/RecvThread.h"
 #include "../model/DeviceInfo.h"
@@ -59,6 +60,8 @@ private:
     void setupStatusBar();
     void updateDeviceTable(const DeviceInfo& info);
     void checkAlarm(const DeviceInfo& info);
+    void startRecvWorker();
+    void stopRecvWorker();
 
     // 界面控件
     QTableWidget*  m_deviceTable;
@@ -69,7 +72,8 @@ private:
 
     // 业务对象
     TcpClient*     m_tcpClient;
-    RecvThread*    m_recvThread;
+    RecvWorker*    m_recvWorker;
+    QThread*       m_recvThread;
     QTimer*        m_simulateTimer;
     bool           m_connected;
 

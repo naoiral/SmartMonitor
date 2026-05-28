@@ -32,7 +32,14 @@
 #include <QObject>
 #include <QTcpSocket>
 #include <QByteArray>
+#include <QTimer>
 
+/**
+ * @brief TCP客户端
+ *
+ * 异步连接：调用connectToHost()后立即返回，通过connectionStateChanged信号通知结果。
+ * 自动重连：断开后如果m_autoReconnect为true，自动每隔m_reconnectInterval毫秒重连。
+ */
 class TcpClient : public QObject
 {
     Q_OBJECT
@@ -41,10 +48,14 @@ public:
     explicit TcpClient(QObject* parent = nullptr);
     ~TcpClient();
 
-    bool connectToHost(const QString& ip, quint16 port);
+    void connectToHost(const QString& ip, quint16 port);
     void disconnect();
     bool isConnected() const;
     bool sendData(const QByteArray& data);
+
+    void setAutoReconnect(bool enable);
+    bool autoReconnect() const;
+    void setReconnectInterval(int msec);
 
 signals:
     void dataReceived(const QByteArray& data);
@@ -56,9 +67,17 @@ private slots:
     void onConnected();
     void onDisconnected();
     void onError(QAbstractSocket::SocketError socketError);
+    void onConnectTimeout();
+    void tryReconnect();
 
 private:
     QTcpSocket* m_socket;
+    QTimer*     m_connectTimer;    // 连接超时定时器
+    QTimer*     m_reconnectTimer;  // 重连定时器
+    QString     m_host;
+    quint16     m_port;
+    bool        m_autoReconnect;
+    int         m_reconnectInterval;
 };
 
 #endif // TCPCLIENT_H

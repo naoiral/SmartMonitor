@@ -9,6 +9,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
+#include <QHeaderView>
 
 DeviceDetail::DeviceDetail(QWidget* parent)
     : QDialog(parent)

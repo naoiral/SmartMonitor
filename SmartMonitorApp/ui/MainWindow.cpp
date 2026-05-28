@@ -28,6 +28,7 @@
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent),
       m_tcpClient(new TcpClient(this)),
+      m_recvWorker(nullptr),
       m_recvThread(nullptr),
       m_simulateTimer(new QTimer(this)),
       m_connected(false),
@@ -47,11 +48,7 @@ MainWindow::MainWindow(QWidget* parent)
 
 MainWindow::~MainWindow()
 {
-    if (m_recvThread) {
-        m_recvThread->stop();
-        m_recvThread->quit();
-        m_recvThread->wait();
-    }
+    stopRecvWorker();
 }
 
 void MainWindow::setupUI()
@@ -131,31 +128,22 @@ void MainWindow::onConnectClicked()
 
     statusBar()->showMessage(QString("正在连接 %1:%2 ...").arg(ip).arg(port));
 
-    if (m_tcpClient->connectToHost(ip, port)) {
-        m_connected = true;
-        m_connectBtn->setEnabled(false);
-        m_disconnectBtn->setEnabled(true);
+    // 开启自动重连
+    m_tcpClient->setAutoReconnect(true);
 
-        // 启动接收线程
-        m_recvThread = new RecvThread(m_tcpClient, this);
-        connect(m_recvThread, &RecvThread::deviceDataReady,
-                this, &MainWindow::onDeviceDataReceived);
-        m_recvThread->start();
-    } else {
-        statusBar()->showMessage("连接失败，请检查设备网络", 5000);
-    }
+    // 异步连接，连接结果通过 connectionStateChanged 信号通知
+    m_tcpClient->connectToHost(ip, port);
+    m_connectBtn->setEnabled(false);
 }
 
 void MainWindow::onDisconnectClicked()
 {
-    if (m_recvThread) {
-        m_recvThread->stop();
-        m_recvThread->quit();
-        m_recvThread->wait();
-        delete m_recvThread;
-        m_recvThread = nullptr;
-    }
+    // 手动断开时关闭自动重连
+    m_tcpClient->setAutoReconnect(false);
     m_tcpClient->disconnect();
+
+    stopRecvWorker();
+
     m_simulateTimer->stop();
     m_connected = false;
     m_connectBtn->setEnabled(true);
@@ -166,11 +154,27 @@ void MainWindow::onDisconnectClicked()
 void MainWindow::onConnectionStateChanged(bool connected)
 {
     if (connected) {
+        m_connected = true;
+        m_connectBtn->setEnabled(false);
+        m_disconnectBtn->setEnabled(true);
         m_connectionStatus->setText("已连接");
         m_connectionStatus->setStyleSheet("color: green; font-weight: bold;");
+        statusBar()->showMessage("已连接到设备", 3000);
+
+        // 连接成功后启动接收线程
+        if (!m_recvWorker) {
+            startRecvWorker();
+        }
     } else {
+        // 清理接收线程
+        stopRecvWorker();
+
+        m_connected = false;
+        m_connectBtn->setEnabled(true);
+        m_disconnectBtn->setEnabled(false);
         m_connectionStatus->setText("未连接");
         m_connectionStatus->setStyleSheet("color: red; font-weight: bold;");
+        statusBar()->showMessage("连接已断开", 5000);
     }
 }
 
@@ -234,6 +238,49 @@ void MainWindow::checkAlarm(const DeviceInfo& info)
         alarm.resolved   = false;
         DbManager::instance().insertAlarm(alarm);
         statusBar()->showMessage(QString("[报警] %1: %2").arg(info.name, alarm.description), 10000);
+    }
+}
+
+void MainWindow::startRecvWorker()
+{
+    // 创建子线程和Worker
+    m_recvThread = new QThread(this);
+    m_recvWorker = new RecvWorker(m_tcpClient);
+    m_recvWorker->moveToThread(m_recvThread);
+
+    // 连接信号：Worker解析出数据后传回主线程
+    connect(m_recvWorker, &RecvWorker::deviceDataReady,
+            this, &MainWindow::onDeviceDataReceived);
+
+    // 线程启动后开始处理数据
+    connect(m_recvThread, &QThread::started,
+            m_recvWorker, &RecvWorker::startProcessing);
+
+    // 注意：不在这里连接finished->deleteLater，而是在stopRecvWorker中手动清理
+    // 避免quit()后deleteLater不执行导致内存泄漏，或与手动delete冲突导致double free
+
+    m_recvThread->start();
+}
+
+void MainWindow::stopRecvWorker()
+{
+    if (m_recvThread) {
+        // 通知Worker停止处理
+        if (m_recvWorker) {
+            QMetaObject::invokeMethod(m_recvWorker, "stopProcessing", Qt::QueuedConnection);
+        }
+
+        m_recvThread->quit();
+        m_recvThread->wait(3000);
+
+        // 手动清理Worker（deleteLater在quit()后可能不执行）
+        if (m_recvWorker) {
+            delete m_recvWorker;
+            m_recvWorker = nullptr;
+        }
+
+        delete m_recvThread;
+        m_recvThread = nullptr;
     }
 }
 

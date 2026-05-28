@@ -1,43 +1,47 @@
 /**
  * @file    RecvThread.cpp
- * @brief   数据接收线程实现
+ * @brief   数据接收处理器实现
  *
  * 关键实现细节：
- *     run()中用Qt::DirectConnection连接信号，确保数据解析在子线程执行。
- *     exec()启动子线程的事件循环，让信号槽在子线程中正常工作。
- *     stop()设置标志位并调用quit()退出事件循环。
+ *     RecvWorker被moveToThread移到子线程后：
+ *     - startProcessing()在子线程中连接TcpClient的dataReceived信号
+ *     - onDataReceived()在子线程中执行数据解析
+ *     - deviceDataReady信号跨线程传回主线程更新UI
+ *
+ * 线程模型：
+ *     主线程：TcpClient（socket读写） → dataReceived信号
+ *     子线程：RecvWorker::onDataReceived（数据解析） → deviceDataReady信号
+ *     主线程：MainWindow::onDeviceDataReceived（更新UI + 存数据库）
  */
 
 #include "RecvThread.h"
 #include <QDebug>
 
-RecvThread::RecvThread(TcpClient* client, QObject* parent)
-    : QThread(parent), m_client(client), m_running(true)
+RecvWorker::RecvWorker(TcpClient* client, QObject* parent)
+    : QObject(parent), m_client(client)
 {
 }
 
-RecvThread::~RecvThread()
+void RecvWorker::startProcessing()
 {
-    stop();
-    wait();
+    // 在子线程中连接信号，收到数据后在子线程解析
+    connect(m_client, &TcpClient::dataReceived,
+            this, &RecvWorker::onDataReceived);
+    qDebug() << "RecvWorker: 数据处理已启动（线程:" << QThread::currentThreadId() << ")";
 }
 
-void RecvThread::stop()
+void RecvWorker::stopProcessing()
 {
-    m_running = false;
-    quit();  // 退出事件循环
+    disconnect(m_client, &TcpClient::dataReceived,
+               this, &RecvWorker::onDataReceived);
+    qDebug() << "RecvWorker: 数据处理已停止";
 }
 
-void RecvThread::run()
+void RecvWorker::onDataReceived(const QByteArray& data)
 {
-    // DirectConnection：确保dataReceived的处理在子线程中执行
-    connect(m_client, &TcpClient::dataReceived, this, [this](const QByteArray& data) {
-        QList<DeviceInfo> devices = DataParser::parse(data);
-        for (const auto& info : devices) {
-            emit deviceDataReady(info);
-        }
-    }, Qt::DirectConnection);
-
-    // 启动子线程事件循环（阻塞在这里，直到quit()被调用）
-    exec();
+    // 这个函数在子线程中执行，解析不阻塞UI
+    QList<DeviceInfo> devices = DataParser::parse(data);
+    for (const auto& info : devices) {
+        emit deviceDataReady(info);
+    }
 }

@@ -50,11 +50,18 @@ public:
     void insertAlarm(const AlarmRecord& record);
     QList<AlarmRecord> queryAlarms(int deviceId);
 
+    // 用户认证
+    bool verifyUser(const QString& username, const QString& password);
+    bool addUser(const QString& username, const QString& password);
+
 private:
     DbManager();
     ~DbManager();
     DbManager(const DbManager&) = delete;
     DbManager& operator=(const DbManager&) = delete;
+
+    void initUserTable();
+    static QString hashPassword(const QString& password);
 
     QSqlDatabase m_db;
 };

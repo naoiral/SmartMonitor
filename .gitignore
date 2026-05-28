@@ -1,2 +1,22 @@
-  *.pro.user
-  .qtcreator/
+# Qt Creator 用户配置
+*.pro.user
+.qtcreator/
+
+# 构建产物
+build/
+debug/
+release/
+Makefile
+Makefile.*
+.qmake.stash
+*.o
+*.exe
+*.dll
+*.a
+
+# moc 生成的文件
+moc_*
+qrc_*
+
+# 数据库文件（运行时生成）
+*.db

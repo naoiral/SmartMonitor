@@ -10,6 +10,7 @@
 #include <QHBoxLayout>
 #include <QGroupBox>
 #include <QLabel>
+#include <QHeaderView>
 
 HistoryQuery::HistoryQuery(QWidget* parent)
     : QDialog(parent)

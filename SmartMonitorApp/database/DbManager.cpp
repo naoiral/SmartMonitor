@@ -12,6 +12,7 @@
 #include <QSqlError>
 #include <QDebug>
 #include <QCoreApplication>
+#include <QCryptographicHash>
 
 DbManager::DbManager() {}
 
@@ -61,6 +62,9 @@ bool DbManager::init()
                "alarm_time TEXT,"
                "resolved INTEGER"
                ")");
+
+    // 初始化用户表（含默认admin账户）
+    initUserTable();
 
     return true;
 }
@@ -166,4 +170,51 @@ QList<AlarmRecord> DbManager::queryAlarms(int deviceId)
     }
 
     return result;
+}
+
+void DbManager::initUserTable()
+{
+    QSqlQuery query;
+    query.exec("CREATE TABLE IF NOT EXISTS user_account ("
+               "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+               "username TEXT UNIQUE NOT NULL,"
+               "password_hash TEXT NOT NULL"
+               ")");
+
+    // 检查是否有用户，没有则创建默认admin账户
+    query.exec("SELECT COUNT(*) FROM user_account");
+    if (query.next() && query.value(0).toInt() == 0) {
+        addUser("admin", "123456");
+        qDebug() << "已创建默认管理员账户: admin";
+    }
+}
+
+QString DbManager::hashPassword(const QString& password)
+{
+    QByteArray hash = QCryptographicHash::hash(
+        password.toUtf8(), QCryptographicHash::Sha256);
+    return hash.toHex();
+}
+
+bool DbManager::verifyUser(const QString& username, const QString& password)
+{
+    QSqlQuery query;
+    query.prepare("SELECT password_hash FROM user_account WHERE username = ?");
+    query.addBindValue(username);
+
+    if (!query.exec() || !query.next()) {
+        return false;
+    }
+
+    QString storedHash = query.value(0).toString();
+    return storedHash == hashPassword(password);
+}
+
+bool DbManager::addUser(const QString& username, const QString& password)
+{
+    QSqlQuery query;
+    query.prepare("INSERT INTO user_account (username, password_hash) VALUES (?, ?)");
+    query.addBindValue(username);
+    query.addBindValue(hashPassword(password));
+    return query.exec();
 }

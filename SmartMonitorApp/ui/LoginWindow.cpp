@@ -5,6 +5,7 @@
 
 #include "LoginWindow.h"
 #include "MainWindow.h"
+#include "../database/DbManager.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -76,8 +77,8 @@ void LoginWindow::onLoginClicked()
         return;
     }
 
-    // 简单验证（默认账号admin/123456，实际项目应查数据库）
-    if (username == "admin" && password == "123456") {
+    // 从数据库验证用户（密码用SHA256哈希存储）
+    if (DbManager::instance().verifyUser(username, password)) {
         m_statusLabel->setText("登录成功，正在进入...");
         m_statusLabel->setStyleSheet("color: green;");
         MainWindow* mainWin = new MainWindow;
